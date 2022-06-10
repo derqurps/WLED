@@ -149,6 +149,9 @@ public:
     return USERMOD_ID_SN_PHOTORESISTOR;
   }
 
+  uint16_t getLastLDRValue() {
+    return lastLDRValue;
+  }
   /**
      * addToConfig() (called from set.cpp) stores persistent properties to cfg.json
      */
