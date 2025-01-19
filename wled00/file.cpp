@@ -27,9 +27,10 @@
 
 // There are no consecutive spaces longer than this in the file, so if more space is required, findSpace() can return false immediately
 // Actual space may be lower
-uint16_t knownLargestSpace = UINT16_MAX;
+constexpr size_t MAX_SPACE = UINT16_MAX * 2U;           // smallest supported config has 128Kb flash size
+static volatile size_t knownLargestSpace = MAX_SPACE;
 
-File f;
+static File f; // don't export to other cpp files
 
 //wrapper to find out how long closing takes
 void closeFile() {
@@ -44,7 +45,7 @@ void closeFile() {
 
 //find() that reads and buffers data from file stream in 256-byte blocks.
 //Significantly faster, f.find(key) can take SECONDS for multi-kB files
-bool bufferedFind(const char *target, bool fromStart = true) {
+static bool bufferedFind(const char *target, bool fromStart = true) {
   #ifdef WLED_DEBUG_FS
     DEBUGFS_PRINT("Find ");
     DEBUGFS_PRINTLN(target);
@@ -59,8 +60,8 @@ bool bufferedFind(const char *target, bool fromStart = true) {
   if (fromStart) f.seek(0);
 
   while (f.position() < f.size() -1) {
-    uint16_t bufsize = f.read(buf, FS_BUFSIZE);
-    uint16_t count = 0;
+    size_t bufsize = f.read(buf, FS_BUFSIZE); // better to use size_t instead if uint16_t
+    size_t count = 0;
     while (count < bufsize) {
       if(buf[count] != target[index])
       index = 0; // reset index if any char does not match
@@ -80,7 +81,7 @@ bool bufferedFind(const char *target, bool fromStart = true) {
 }
 
 //find empty spots in file stream in 256-byte blocks.
-bool bufferedFindSpace(uint16_t targetLen, bool fromStart = true) {
+static bool bufferedFindSpace(size_t targetLen, bool fromStart = true) {
 
   #ifdef WLED_DEBUG_FS
     DEBUGFS_PRINTF("Find %d spaces\n", targetLen);
@@ -95,20 +96,20 @@ bool bufferedFindSpace(uint16_t targetLen, bool fromStart = true) {
 
   if (!f || !f.size()) return false;
 
-  uint16_t index = 0;
+  size_t index = 0; // better to use size_t instead if uint16_t
   byte buf[FS_BUFSIZE];
   if (fromStart) f.seek(0);
 
   while (f.position() < f.size() -1) {
-    uint16_t bufsize = f.read(buf, FS_BUFSIZE);
-    uint16_t count = 0;
+    size_t bufsize = f.read(buf, FS_BUFSIZE);
+    size_t count = 0;
 
     while (count < bufsize) {
       if(buf[count] == ' ') {
         if(++index >= targetLen) { // return true if space long enough
           if (fromStart) {
             f.seek((f.position() - bufsize) + count +1 - targetLen);
-            knownLargestSpace = UINT16_MAX; //there may be larger spaces after, so we don't know
+            knownLargestSpace = MAX_SPACE; //there may be larger spaces after, so we don't know
           }
           DEBUGFS_PRINTF("Found at pos %d, took %d ms", f.position(), millis() - s);
           return true;
@@ -116,7 +117,7 @@ bool bufferedFindSpace(uint16_t targetLen, bool fromStart = true) {
       } else {
         if (!fromStart) return false;
         if (index) {
-          if (knownLargestSpace < index || knownLargestSpace == UINT16_MAX) knownLargestSpace = index;
+          if (knownLargestSpace < index || (knownLargestSpace == MAX_SPACE)) knownLargestSpace = index;
           index = 0; // reset index if not space
         }
       }
@@ -129,7 +130,7 @@ bool bufferedFindSpace(uint16_t targetLen, bool fromStart = true) {
 }
 
 //find the closing bracket corresponding to the opening bracket at the file pos when calling this function
-bool bufferedFindObjectEnd() {
+static bool bufferedFindObjectEnd() {
   #ifdef WLED_DEBUG_FS
     DEBUGFS_PRINTLN(F("Find obj end"));
     uint32_t s = millis();
@@ -137,13 +138,13 @@ bool bufferedFindObjectEnd() {
 
   if (!f || !f.size()) return false;
 
-  uint16_t objDepth = 0; //num of '{' minus num of '}'. return once 0
+  unsigned objDepth = 0; //num of '{' minus num of '}'. return once 0
   //size_t start = f.position();
   byte buf[FS_BUFSIZE];
 
   while (f.position() < f.size() -1) {
-    uint16_t bufsize = f.read(buf, FS_BUFSIZE);
-    uint16_t count = 0;
+    size_t bufsize = f.read(buf, FS_BUFSIZE); // better to use size_t instead of uint16_t
+    size_t count = 0;
 
     while (count < bufsize) {
       if (buf[count] == '{') objDepth++;
@@ -161,13 +162,13 @@ bool bufferedFindObjectEnd() {
 }
 
 //fills n bytes from current file pos with ' ' characters
-void writeSpace(uint16_t l)
+static void writeSpace(size_t l)
 {
   byte buf[FS_BUFSIZE];
   memset(buf, ' ', FS_BUFSIZE);
 
   while (l > 0) {
-    uint16_t block = (l>FS_BUFSIZE) ? FS_BUFSIZE : l;
+    size_t block = (l>FS_BUFSIZE) ? FS_BUFSIZE : l;
     f.write(buf, block);
     l -= block;
   }
@@ -175,7 +176,7 @@ void writeSpace(uint16_t l)
   if (knownLargestSpace < l) knownLargestSpace = l;
 }
 
-bool appendObjectToFile(const char* key, JsonDocument* content, uint32_t s, uint32_t contentLen = 0)
+static bool appendObjectToFile(const char* key, const JsonDocument* content, uint32_t s, uint32_t contentLen = 0)
 {
   #ifdef WLED_DEBUG_FS
     DEBUGFS_PRINTLN(F("Append"));
@@ -225,7 +226,7 @@ bool appendObjectToFile(const char* key, JsonDocument* content, uint32_t s, uint
 
   if (pos == 0) //not found
   {
-    DEBUGFS_PRINTLN("not }");
+    DEBUGFS_PRINTLN(F("not }"));
     f.seek(0);
     while (bufferedFind("}",false)) //find last closing bracket in JSON if not last char
     {
@@ -254,14 +255,14 @@ bool appendObjectToFile(const char* key, JsonDocument* content, uint32_t s, uint
   return true;
 }
 
-bool writeObjectToFileUsingId(const char* file, uint16_t id, JsonDocument* content)
+bool writeObjectToFileUsingId(const char* file, uint16_t id, const JsonDocument* content)
 {
   char objKey[10];
   sprintf(objKey, "\"%d\":", id);
   return writeObjectToFile(file, objKey, content);
 }
 
-bool writeObjectToFile(const char* file, const char* key, JsonDocument* content)
+bool writeObjectToFile(const char* file, const char* key, const JsonDocument* content)
 {
   uint32_t s = 0; //timing
   #ifdef WLED_DEBUG_FS
@@ -270,9 +271,9 @@ bool writeObjectToFile(const char* file, const char* key, JsonDocument* content)
     s = millis();
   #endif
 
-  uint32_t pos = 0;
-  f = WLED_FS.open(file, "r+");
-  if (!f && !WLED_FS.exists(file)) f = WLED_FS.open(file, "w+");
+  size_t pos = 0;
+  char fileName[129]; strncpy_P(fileName, file, 128); fileName[128] = 0; //use PROGMEM safe copy as FS.open() does not
+  f = WLED_FS.open(fileName, WLED_FS.exists(fileName) ? "r+" : "w+");
   if (!f) {
     DEBUGFS_PRINTLN(F("Failed to open!"));
     return false;
@@ -287,7 +288,7 @@ bool writeObjectToFile(const char* file, const char* key, JsonDocument* content)
   pos = f.position();
   //measure out end of old object
   bufferedFindObjectEnd();
-  uint32_t pos2 = f.position();
+  size_t pos2 = f.position();
 
   uint32_t oldLen = pos2 - pos;
   DEBUGFS_PRINTF("Old obj len %d\n", oldLen);
@@ -298,7 +299,7 @@ bool writeObjectToFile(const char* file, const char* key, JsonDocument* content)
   //3. The new content is larger than the old, but smaller than old + trailing spaces, overwrite with new
   //4. The new content is larger than old + trailing spaces, delete old and append
 
-  uint32_t contentLen = 0;
+  size_t contentLen = 0;
   if (!content->isNull()) contentLen = measureJson(*content);
 
   if (contentLen && contentLen <= oldLen) { //replace and fill diff with spaces
@@ -339,7 +340,8 @@ bool readObjectFromFile(const char* file, const char* key, JsonDocument* dest)
     DEBUGFS_PRINTF("Read from %s with key %s >>>\n", file, (key==nullptr)?"nullptr":key);
     uint32_t s = millis();
   #endif
-  f = WLED_FS.open(file, "r");
+  char fileName[129]; strncpy_P(fileName, file, 128); fileName[128] = 0; //use PROGMEM safe copy as FS.open() does not
+  f = WLED_FS.open(fileName, "r");
   if (!f) return false;
 
   if (key != nullptr && !bufferedFind(key)) //key does not exist in file
@@ -374,37 +376,64 @@ void updateFSInfo() {
 }
 
 
-//Un-comment any file types you need
-String getContentType(AsyncWebServerRequest* request, String filename){
-  if(request->hasArg("download")) return "application/octet-stream";
-  else if(filename.endsWith(".htm")) return "text/html";
-  else if(filename.endsWith(".html")) return "text/html";
-  else if(filename.endsWith(".css")) return "text/css";
-  else if(filename.endsWith(".js")) return "application/javascript";
-  else if(filename.endsWith(".json")) return "application/json";
-  else if(filename.endsWith(".png")) return "image/png";
-  else if(filename.endsWith(".gif")) return "image/gif";
-  else if(filename.endsWith(".jpg")) return "image/jpeg";
-  else if(filename.endsWith(".ico")) return "image/x-icon";
-//  else if(filename.endsWith(".xml")) return "text/xml";
-//  else if(filename.endsWith(".pdf")) return "application/x-pdf";
-//  else if(filename.endsWith(".zip")) return "application/x-zip";
-//  else if(filename.endsWith(".gz")) return "application/x-gzip";
-  return "text/plain";
+#ifdef ARDUINO_ARCH_ESP32
+// caching presets in PSRAM may prevent occasional flashes seen when HomeAssitant polls WLED
+// original idea by @akaricchi (https://github.com/Akaricchi)
+// returns a pointer to the PSRAM buffer, updates size parameter
+static const uint8_t *getPresetCache(size_t &size) {
+  static unsigned long presetsCachedTime = 0;
+  static uint8_t *presetsCached = nullptr;
+  static size_t presetsCachedSize = 0;
+  static byte presetsCachedValidate = 0;
+
+  //if (presetsModifiedTime != presetsCachedTime) DEBUG_PRINTLN(F("getPresetCache(): presetsModifiedTime changed."));
+  //if (presetsCachedValidate != cacheInvalidate) DEBUG_PRINTLN(F("getPresetCache(): cacheInvalidate changed."));
+
+  if ((presetsModifiedTime != presetsCachedTime) || (presetsCachedValidate != cacheInvalidate)) {
+    if (presetsCached) {
+      free(presetsCached);
+      presetsCached = nullptr;
+    }
+  }
+
+  if (!presetsCached) {
+    File file = WLED_FS.open(FPSTR(getPresetsFileName()), "r");
+    if (file) {
+      presetsCachedTime = presetsModifiedTime;
+      presetsCachedValidate = cacheInvalidate;
+      presetsCachedSize = 0;
+      presetsCached = (uint8_t*)ps_malloc(file.size() + 1);
+      if (presetsCached) {
+        presetsCachedSize = file.size();
+        file.read(presetsCached, presetsCachedSize);
+        presetsCached[presetsCachedSize] = 0;
+        file.close();
+      }
+    }
+  }
+
+  size = presetsCachedSize;
+  return presetsCached;
 }
+#endif
 
 bool handleFileRead(AsyncWebServerRequest* request, String path){
-  DEBUG_PRINTLN("FileRead: " + path);
+  DEBUG_PRINT(F("WS FileRead: ")); DEBUG_PRINTLN(path);
   if(path.endsWith("/")) path += "index.htm";
-  if(path.indexOf("sec") > -1) return false;
-  String contentType = getContentType(request, path);
-  /*String pathWithGz = path + ".gz";
-  if(WLED_FS.exists(pathWithGz)){
-    request->send(WLED_FS, pathWithGz, contentType);
-    return true;
-  }*/
-  if(WLED_FS.exists(path)) {
-    request->send(WLED_FS, path, contentType);
+  if(path.indexOf(F("sec")) > -1) return false;
+  #ifdef ARDUINO_ARCH_ESP32
+  if (psramSafe && psramFound() && path.endsWith(FPSTR(getPresetsFileName()))) {
+    size_t psize;
+    const uint8_t *presets = getPresetCache(psize);
+    if (presets) {
+      AsyncWebServerResponse *response = request->beginResponse_P(200, FPSTR(CONTENT_TYPE_JSON), presets, psize);
+      request->send(response);
+      return true;
+    }
+  }
+  #endif
+  if(WLED_FS.exists(path) || WLED_FS.exists(path + ".gz")) {
+    request->send(request->beginResponse(WLED_FS, path, {}, request->hasArg(F("download")), {}));
     return true;
   }
   return false;

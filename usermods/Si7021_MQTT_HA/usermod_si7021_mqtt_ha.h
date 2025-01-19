@@ -13,14 +13,6 @@
 
 Adafruit_Si7021 si7021;
 
-#ifdef ARDUINO_ARCH_ESP32 //ESP32 boards
-uint8_t SCL_PIN = 22;
-uint8_t SDA_PIN = 21;
-#else //ESP8266 boards
-uint8_t SCL_PIN = 5;
-uint8_t SDA_PIN = 4;
-#endif
-
 class Si7021_MQTT_HA : public Usermod
 {
   private:
@@ -101,8 +93,8 @@ class Si7021_MQTT_HA : public Usermod
 
         JsonObject device = doc.createNestedObject("device"); // attach the sensor to the same device
         device["name"] = String(serverDescription);
-        device["model"] = "WLED";
-        device["manufacturer"] = "Aircoookie";
+        device["model"] = F(WLED_PRODUCT_NAME);
+        device["manufacturer"] = F(WLED_BRAND);
         device["identifiers"] = String("wled-") + String(serverDescription);
         device["sw_version"] = VERSION;
 
@@ -184,7 +176,6 @@ class Si7021_MQTT_HA : public Usermod
     {
       if (enabled) {
         Serial.println("Si7021_MQTT_HA: Starting!");
-        Wire.begin(SDA_PIN, SCL_PIN);
         Serial.println("Si7021_MQTT_HA: Initializing sensors.. ");
         _initializeSensor();
       }
