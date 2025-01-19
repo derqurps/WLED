@@ -8,7 +8,7 @@
 /*
  * Acquires time from NTP server
  */
-//#define WLED_DEBUG_NTP
+#define WLED_DEBUG_NTP
 #define NTP_SYNC_INTERVAL 42000UL //Get fresh NTP time about twice per day
 
 Timezone* tz;
@@ -254,7 +254,12 @@ bool checkNTPResponse()
   DEBUG_PRINTF_P(PSTR("NTP recv, l=%d\n"), cb);
   byte pbuf[NTP_PACKET_SIZE];
   ntpUdp.read(pbuf, NTP_PACKET_SIZE); // read the packet into the buffer
-  if (!isValidNtpResponse(pbuf)) return false;  // verify we have a valid response to client
+  if (!isValidNtpResponse(pbuf)) {
+		#ifdef WLED_DEBUG_NTP
+		Serial.print("NTP not valid");
+  	#endif
+		return false;  // verify we have a valid response to client
+	}
 
   Toki::Time arrived  = toki.fromNTP(pbuf + 32);
   Toki::Time departed = toki.fromNTP(pbuf + 40);
