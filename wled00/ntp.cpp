@@ -8,7 +8,7 @@
 /*
  * Acquires time from NTP server
  */
-#define WLED_DEBUG_NTP
+//#define WLED_DEBUG_NTP
 #define NTP_SYNC_INTERVAL 42000UL //Get fresh NTP time about twice per day
 
 Timezone* tz;
@@ -225,17 +225,44 @@ void sendNTPPacket()
 }
 
 static bool isValidNtpResponse(byte * ntpPacket) {
+	Serial.print("NTP Packet: ");
+	for (int i = 0; i < NTP_PACKET_SIZE; i++)
+	{
+		Serial.print(ntpPacket[i], HEX); // Print each byte in hexadecimal
+		Serial.print(" ");
+	}
+	Serial.println();
   // Perform a few validity checks on the packet
   //   based on https://github.com/taranais/NTPClient/blob/master/NTPClient.cpp
-  if((ntpPacket[0] & 0b11000000) == 0b11000000) return false; //reject LI=UNSYNC
+  // if((ntpPacket[0] & 0b11000000) == 0b11000000) {
+	// 	#ifdef WLED_DEBUG_NTP
+	// 	Serial.println("NTP reject LI=UNSYNC");
+  // 	#endif
+	// 	return false; //reject LI=UNSYNC
+	// }
   // if((ntpPacket[0] & 0b00111000) >> 3 < 0b100) return false; //reject Version < 4
-  if((ntpPacket[0] & 0b00000111) != 0b100)      return false; //reject Mode != Server
-  if((ntpPacket[1] < 1) || (ntpPacket[1] > 15)) return false; //reject invalid Stratum
+  if((ntpPacket[0] & 0b00000111) != 0b100) {
+		#ifdef WLED_DEBUG_NTP
+		Serial.println("NTP reject Mode != Server");
+
+  	#endif
+		return false; //reject Mode != Server
+	}
+  if((ntpPacket[1] < 1) || (ntpPacket[1] > 15)) {
+		#ifdef WLED_DEBUG_NTP
+		Serial.println("NTP reject invalid Stratum");
+  	#endif
+		return false; //reject invalid Stratum
+	}
   if( ntpPacket[16] == 0 && ntpPacket[17] == 0 && 
       ntpPacket[18] == 0 && ntpPacket[19] == 0 &&
       ntpPacket[20] == 0 && ntpPacket[21] == 0 &&
-      ntpPacket[22] == 0 && ntpPacket[23] == 0)               //reject ReferenceTimestamp == 0
-    return false;
+      ntpPacket[22] == 0 && ntpPacket[23] == 0){
+		#ifdef WLED_DEBUG_NTP
+		Serial.println("NTP reject ReferenceTimestamp == 0");
+  	#endif
+    return false; //reject ReferenceTimestamp == 0
+	}
 
   return true;
 }
@@ -256,7 +283,7 @@ bool checkNTPResponse()
   ntpUdp.read(pbuf, NTP_PACKET_SIZE); // read the packet into the buffer
   if (!isValidNtpResponse(pbuf)) {
 		#ifdef WLED_DEBUG_NTP
-		Serial.print("NTP not valid");
+		Serial.println("NTP not valid");
   	#endif
 		return false;  // verify we have a valid response to client
 	}
